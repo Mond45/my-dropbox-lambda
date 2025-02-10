@@ -73,6 +73,7 @@ export = async () => {
     {
       role: lambdaRole.arn,
       runtime: aws.lambda.Runtime.Python3d13,
+      architectures: ["x86_64"],
       handler: "lambda.lambda_handler",
       code: new pulumi.asset.AssetArchive({
         ".": new pulumi.asset.FileArchive("./dist/"),

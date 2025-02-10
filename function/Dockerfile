@@ -5,7 +5,14 @@ WORKDIR /app
 FROM base AS packages
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt --target ./package
+
+RUN pip install \
+--platform manylinux2014_x86_64 \
+--target ./package \
+--implementation cp \
+--python-version 3.13 \
+--only-binary=:all: \
+-r requirements.txt
 
 FROM scratch
 COPY src .

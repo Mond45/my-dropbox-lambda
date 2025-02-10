@@ -5,6 +5,8 @@ from aws_lambda_powertools.utilities.typing import LambdaContext
 from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools import Logger
 import boto3
+from pydantic import BaseModel
+from aws_lambda_powertools.utilities.parser import parse
 
 app = APIGatewayRestResolver()
 logger = Logger()
@@ -21,9 +23,17 @@ def hello():
     return {"message": "hello world"}
 
 
+class FileUploadBody(BaseModel):
+    key: str
+    content: str
+
+
 @app.put("/file")
 def upload_file():
-    logger.info(app.current_event.json_body)
+    body = parse(app.current_event.json_body, FileUploadBody)
+    s3_client.put_object(
+        Bucket=BUCKET_NAME, Key=body.key, Body=base64.b64decode(body.content)
+    )
     return {"message": "file uploaded"}
 
 

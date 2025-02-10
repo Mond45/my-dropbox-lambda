@@ -1,0 +1,15 @@
+{
+    "name": "my-dropbox",
+    "devDependencies": {
+        "@types/node": "^18",
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "@pulumi/aws": "^6.0.0",
+        "@pulumi/aws-apigateway": "^2.0.0",
+        "@pulumi/awsx": "^2.0.2",
+        "@pulumi/command": "0.0.1-testwindows.signing",
+        "@pulumi/docker-build": "^0.0.10",
+        "@pulumi/pulumi": "^3.113.0"
+    }
+}

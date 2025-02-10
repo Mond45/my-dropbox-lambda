@@ -92,6 +92,7 @@ export = async () => {
     routes: [
       { path: "/hello", method: "GET", eventHandler: fn },
       { path: "/file", method: "PUT", eventHandler: fn },
+      { path: "/file", method: "GET", eventHandler: fn },
     ],
   });
 

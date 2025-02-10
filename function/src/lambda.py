@@ -9,7 +9,7 @@ from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools.utilities.parser import parse
 from aws_lambda_powertools.utilities.typing import LambdaContext
 
-from .models import FileUploadBody
+from models import FileUploadBody
 
 app = APIGatewayRestResolver()
 logger = Logger()
@@ -46,20 +46,9 @@ def upload_file():
 @app.get("/files")
 def list_files():
     prefix = app.current_event.query_string_parameters.get("prefix", "")
+    paginator = s3_client.get_paginator("list_objects_v2")
     result = []
-    continuation_token = None
-    while True:
-        if continuation_token is not None:
-            response = s3_client.list_objects_v2(
-                Bucket=BUCKET_NAME,
-                Prefix=prefix,
-                ContinuationToken=continuation_token,
-            )
-        else:
-            response = s3_client.list_objects_v2(
-                Bucket=BUCKET_NAME,
-                Prefix=prefix,
-            )
+    for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=prefix):
         result.extend(
             [
                 {
@@ -67,13 +56,9 @@ def list_files():
                     "size": obj["Size"],
                     "modified": obj["LastModified"].isoformat(),
                 }
-                for obj in response["Contents"]
+                for obj in page["Contents"]
             ]
         )
-        if response["IsTruncated"]:
-            continuation_token = response["NextContinuationToken"]
-        else:
-            break
     return result
 
 

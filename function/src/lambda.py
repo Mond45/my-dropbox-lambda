@@ -1,13 +1,15 @@
 import base64
 import os
+
+import boto3
+from aws_lambda_powertools import Logger
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver
 from aws_lambda_powertools.event_handler.api_gateway import Response
-from aws_lambda_powertools.utilities.typing import LambdaContext
 from aws_lambda_powertools.logging import correlation_paths
-from aws_lambda_powertools import Logger
-import boto3
 from aws_lambda_powertools.utilities.parser import parse
-from models import FileUploadBody
+from aws_lambda_powertools.utilities.typing import LambdaContext
+
+from .models import FileUploadBody
 
 app = APIGatewayRestResolver()
 logger = Logger()
@@ -39,6 +41,40 @@ def upload_file():
         Bucket=BUCKET_NAME, Key=body.key, Body=base64.b64decode(body.content)
     )
     return {"message": "file uploaded"}
+
+
+@app.get("/files")
+def list_files():
+    prefix = app.current_event.query_string_parameters.get("prefix", "")
+    result = []
+    continuation_token = None
+    while True:
+        if continuation_token is not None:
+            response = s3_client.list_objects_v2(
+                Bucket=BUCKET_NAME,
+                Prefix=prefix,
+                ContinuationToken=continuation_token,
+            )
+        else:
+            response = s3_client.list_objects_v2(
+                Bucket=BUCKET_NAME,
+                Prefix=prefix,
+            )
+        result.extend(
+            [
+                {
+                    "key": obj["Key"],
+                    "size": obj["Size"],
+                    "modified": obj["LastModified"].isoformat(),
+                }
+                for obj in response["Contents"]
+            ]
+        )
+        if response["IsTruncated"]:
+            continuation_token = response["NextContinuationToken"]
+        else:
+            break
+    return result
 
 
 @logger.inject_lambda_context(correlation_id_path=correlation_paths.API_GATEWAY_REST)

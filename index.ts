@@ -5,22 +5,22 @@ import * as dockerBuild from "@pulumi/docker-build";
 import * as command from "@pulumi/command";
 
 export = async () => {
-  const s3Bucket = new aws.s3.BucketV2("mydropbox-bucket");
+  const s3Bucket = new aws.s3.BucketV2("my-dropbox-bucket");
 
-  const userTable = new aws.dynamodb.Table("mydropbox-user-table", {
+  const userTable = new aws.dynamodb.Table("my-dropbox-user-table", {
     attributes: [{ name: "Username", type: "S" }],
     hashKey: "Username",
     billingMode: "PAY_PER_REQUEST",
   });
 
-  const lambdaRole = new aws.iam.Role("mydropbox-lambda-role", {
+  const lambdaRole = new aws.iam.Role("my-dropbox-lambda-role", {
     assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal(
       aws.iam.Principals.LambdaPrincipal
     ),
     managedPolicyArns: [aws.iam.ManagedPolicy.AWSLambdaBasicExecutionRole],
   });
 
-  new aws.iam.RolePolicy("mydropbox-lambda-s3-policy", {
+  new aws.iam.RolePolicy("my-dropbox-lambda-s3-policy", {
     role: lambdaRole,
     policy: s3Bucket.arn.apply((arn) =>
       JSON.stringify({
@@ -36,7 +36,7 @@ export = async () => {
     ),
   });
 
-  new aws.iam.RolePolicy("mydropbox-lambda-dynamo-policy", {
+  new aws.iam.RolePolicy("my-dropbox-lambda-dynamo-policy", {
     role: lambdaRole,
     policy: userTable.arn.apply((arn) =>
       JSON.stringify({
@@ -57,7 +57,7 @@ export = async () => {
     dir: "./function",
   });
 
-  const buildLambda = new dockerBuild.Image("mydropbox-lambda-build", {
+  const buildLambda = new dockerBuild.Image("my-dropbox-lambda-build", {
     push: false,
     context: { location: "./function" },
     dockerfile: { location: "./function/Dockerfile" },
@@ -69,7 +69,7 @@ export = async () => {
   });
 
   const fn = new aws.lambda.Function(
-    "mydropbox-function",
+    "my-dropbox-function",
     {
       role: lambdaRole.arn,
       runtime: aws.lambda.Runtime.Python3d13,
@@ -87,7 +87,7 @@ export = async () => {
     { dependsOn: [buildLambda] }
   );
 
-  const api = new apigateway.RestAPI("api", {
+  const api = new apigateway.RestAPI("my-dropbox-api", {
     routes: [
       { path: "/hello", method: "GET", eventHandler: fn },
       { path: "/file", method: "PUT", eventHandler: fn },

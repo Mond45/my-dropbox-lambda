@@ -1,5 +1,5 @@
+import base64
 import os
-from time import time
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from aws_lambda_powertools.logging import correlation_paths
@@ -23,9 +23,7 @@ def hello():
 
 @app.put("/file")
 def upload_file():
-    s3_client.put_object(
-        Bucket=BUCKET_NAME, Key=f"{int(time())}.txt", Body="Hello, world!"
-    )
+    logger.info(app.current_event.json_body)
     return {"message": "file uploaded"}
 
 

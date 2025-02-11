@@ -8,6 +8,7 @@ from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools.utilities.parser import parse, ValidationError
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from aws_lambda_powertools.event_handler import exceptions as HTTPErrors
+from boto3.dynamodb.conditions import Attr
 
 from lib import generate_token, get_active_username, get_session_token
 from models import UserFileModel, FileUploadModel, UserModel
@@ -25,7 +26,8 @@ def register():
 
         hashed_password = password_hasher.hash(password)
         user_table.put_item(
-            Item={"Username": username, "Password": hashed_password, "SharedFiles": []}
+            Item={"Username": username, "Password": hashed_password, "SharedFiles": []},
+            ConditionExpression=Attr("Username").not_exists(),
         )
     except ValidationError:
         raise HTTPErrors.BadRequestError("Invalid request body")
@@ -83,7 +85,7 @@ def get_file():
     active_username = get_active_username(token)
 
     username = app.current_event.query_string_parameters.get("username", None)
-    file_name = app.current_event.query_string_parameters.get("file_name")
+    file_name = app.current_event.query_string_parameters["file_name"]
 
     key = f"{username or active_username}/{file_name}"
     if username is not None and username != active_username:
@@ -141,13 +143,19 @@ def share_file():
         file_name, target_username = body.file_name, body.username
 
         key = f"{active_username}/{file_name}"
+        # ensure file existence
+        s3_client.head_object(Bucket=BUCKET_NAME, Key=key)
+
         user_table.update_item(
             Key={"Username": target_username},
             UpdateExpression="SET SharedFiles = list_append(SharedFiles, :i)",
             ExpressionAttributeValues={":i": [key]},
+            ConditionExpression=Attr("Username").exists(),
         )
     except ValidationError:
         raise HTTPErrors.BadRequestError("Invalid request body")
+    except:
+        raise HTTPErrors.NotFoundError()
 
 
 @logger.inject_lambda_context(correlation_id_path=correlation_paths.API_GATEWAY_REST)

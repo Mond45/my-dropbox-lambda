@@ -1,57 +1,109 @@
 import base64
-import os
+from datetime import datetime, timedelta
 
-import boto3
 from aws_lambda_powertools import Logger
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver
 from aws_lambda_powertools.event_handler.api_gateway import Response
 from aws_lambda_powertools.logging import correlation_paths
-from aws_lambda_powertools.utilities.parser import parse
+from aws_lambda_powertools.utilities.parser import parse, ValidationError
 from aws_lambda_powertools.utilities.typing import LambdaContext
+from aws_lambda_powertools.event_handler import exceptions as HTTPErrors
 
-from models import FileUploadBody
+from lib import generate_token, get_active_username, get_session_token
+from models import UserFileModel, FileUploadModel, UserModel
+from resources import s3_client, user_table, session_table, password_hasher, BUCKET_NAME
 
 app = APIGatewayRestResolver()
 logger = Logger()
 
-s3_client = boto3.client("s3")
-dynamo_client = boto3.client("dynamodb")
 
-BUCKET_NAME = os.environ["BUCKET_NAME"]
-USER_TABLE_NAME = os.environ["USER_TABLE_NAME"]
-SESSION_TABLE_NAME = os.environ["SESSION_TABLE_NAME"]
+@app.post("/register")
+def register():
+    try:
+        body = parse(app.current_event.json_body, UserModel)
+        username, password = body.username, body.password
+
+        hashed_password = password_hasher.hash(password)
+        user_table.put_item(
+            Item={"Username": username, "Password": hashed_password, "SharedFiles": []}
+        )
+    except ValidationError:
+        raise HTTPErrors.BadRequestError("Invalid request body")
 
 
-@app.get("/hello")
-def hello():
-    return {
-        "message": f"{BUCKET_NAME}\n{USER_TABLE_NAME}\n{SESSION_TABLE_NAME}"
-    }
+@app.post("/login")
+def login():
+    try:
+        body = parse(app.current_event.json_body, UserModel)
+        username, password = body.username, body.password
+
+        user = user_table.get_item(Key={"Username": username})
+        password_hasher.verify(user["Item"]["Password"], password)
+
+        expireAt = int((datetime.now() + timedelta(days=7)).timestamp())
+        token = generate_token()
+        session_table.put_item(
+            Item={"Token": token, "Username": username, "ExpireAt": expireAt}
+        )
+
+        return {"token": token}
+    except ValidationError:
+        raise HTTPErrors.BadRequestError("Invalid request body")
+    except:
+        raise HTTPErrors.UnauthorizedError("Invalid credentials")
 
 
-@app.get("/file")
-def get_file():
-    key = app.current_event.query_string_parameters["key"]
-    response = s3_client.get_object(Bucket=BUCKET_NAME, Key=key)
-    body = response["Body"]
-    return Response(200, body=body.read())
+@app.post("/logout")
+def logout():
+    token = get_session_token(app)
+    session_table.delete_item(Key={"Token": token})
 
 
 @app.put("/file")
 def upload_file():
-    body = parse(app.current_event.json_body, FileUploadBody)
-    s3_client.put_object(
-        Bucket=BUCKET_NAME, Key=body.key, Body=base64.b64decode(body.content)
-    )
-    return {"message": "file uploaded"}
+    try:
+        body = parse(app.current_event.json_body, FileUploadModel)
+        file_name, content = body.file_name, body.content
+
+        token = get_session_token(app)
+        active_username = get_active_username(token)
+
+        s3_client.put_object(
+            Bucket=BUCKET_NAME,
+            Key=f"{active_username}/{file_name}",
+            Body=base64.b64decode(content),
+        )
+    except ValidationError:
+        raise HTTPErrors.BadRequestError("Invalid request body")
+
+
+@app.get("/file")
+def get_file():
+    token = get_session_token(app)
+    active_username = get_active_username(token)
+
+    username = app.current_event.query_string_parameters.get("username", None)
+    file_name = app.current_event.query_string_parameters.get("file_name")
+
+    key = f"{username or active_username}/{file_name}"
+    if username is not None and username != active_username:
+        user = user_table.get_item(Key={"Username": active_username})
+        if key not in user["Item"]["SharedFiles"]:
+            raise HTTPErrors.ServiceError(403, "Access denied")
+
+    res = s3_client.get_object(Bucket=BUCKET_NAME, Key=key)
+    return Response(200, body=res["Body"].read())
 
 
 @app.get("/files")
 def list_files():
-    prefix = app.current_event.query_string_parameters.get("prefix", "")
+    token = get_session_token(app)
+    active_username = get_active_username(token)
+
+    # Get all files owned by the active user
     paginator = s3_client.get_paginator("list_objects_v2")
     result = []
-    for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=prefix):
+    for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=f"{active_username}/"):
         result.extend(
             [
                 {
@@ -59,10 +111,43 @@ def list_files():
                     "size": obj["Size"],
                     "modified": obj["LastModified"].isoformat(),
                 }
-                for obj in page["Contents"]
+                for obj in page.get("Contents", [])
             ]
         )
+
+    # Get all files shared with the active user
+    user = user_table.get_item(Key={"Username": active_username})
+    shared_files: list[str] = user["Item"]["SharedFiles"]
+    for file in shared_files:
+        head = s3_client.head_object(Bucket=BUCKET_NAME, Key=file)
+        result.append(
+            {
+                "key": file,
+                "size": head["ContentLength"],
+                "modified": head["LastModified"].isoformat(),
+            }
+        )
+
     return result
+
+
+@app.post("/share")
+def share_file():
+    try:
+        token = get_session_token(app)
+        active_username = get_active_username(token)
+
+        body = parse(app.current_event.json_body, UserFileModel)
+        file_name, target_username = body.file_name, body.username
+
+        key = f"{active_username}/{file_name}"
+        user_table.update_item(
+            Key={"Username": target_username},
+            UpdateExpression="SET SharedFiles = list_append(SharedFiles, :i)",
+            ExpressionAttributeValues={":i": [key]},
+        )
+    except ValidationError:
+        raise HTTPErrors.BadRequestError("Invalid request body")
 
 
 @logger.inject_lambda_context(correlation_id_path=correlation_paths.API_GATEWAY_REST)

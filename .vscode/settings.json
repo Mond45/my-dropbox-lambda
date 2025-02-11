@@ -1,3 +1,4 @@
 {
-  "python.analysis.exclude": ["${workspaceFolder}/dist"]
+  "python.analysis.exclude": ["${workspaceFolder}/dist"],
+  "python.analysis.typeCheckingMode": "off"
 }

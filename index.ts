@@ -17,6 +17,7 @@ export = async () => {
     attributes: [{ name: "Token", type: "S" }],
     hashKey: "Token",
     billingMode: "PAY_PER_REQUEST",
+    ttl: { attributeName: "ExpireAt", enabled: true },
   });
 
   const lambdaRole = new aws.iam.Role("my-dropbox-lambda-role", {
@@ -104,10 +105,13 @@ export = async () => {
 
   const api = new apigateway.RestAPI("my-dropbox-api", {
     routes: [
-      { path: "/hello", method: "GET", eventHandler: fn },
+      { path: "/register", method: "POST", eventHandler: fn },
+      { path: "/login", method: "POST", eventHandler: fn },
+      { path: "/logout", method: "POST", eventHandler: fn },
       { path: "/file", method: "PUT", eventHandler: fn },
       { path: "/file", method: "GET", eventHandler: fn },
       { path: "/files", method: "GET", eventHandler: fn },
+      { path: "/share", method: "POST", eventHandler: fn },
     ],
   });
 

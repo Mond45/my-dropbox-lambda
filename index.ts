@@ -13,6 +13,12 @@ export = async () => {
     billingMode: "PAY_PER_REQUEST",
   });
 
+  const sessionTable = new aws.dynamodb.Table("my-dropbox-session-table", {
+    attributes: [{ name: "Token", type: "S" }],
+    hashKey: "Token",
+    billingMode: "PAY_PER_REQUEST",
+  });
+
   const lambdaRole = new aws.iam.Role("my-dropbox-lambda-role", {
     assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal(
       aws.iam.Principals.LambdaPrincipal
@@ -38,18 +44,25 @@ export = async () => {
 
   new aws.iam.RolePolicy("my-dropbox-lambda-dynamo-policy", {
     role: lambdaRole,
-    policy: userTable.arn.apply((arn) =>
-      JSON.stringify({
-        Version: "2012-10-17",
-        Statement: [
-          {
-            Action: "dynamodb:*",
-            Resource: [`${arn}`, `${arn}/*`],
-            Effect: "Allow",
-          },
-        ],
-      })
-    ),
+    policy: pulumi
+      .all([userTable.arn, sessionTable.arn])
+      .apply(([userArn, sessionArn]) =>
+        JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Action: "dynamodb:*",
+              Resource: [
+                `${userArn}`,
+                `${userArn}/*`,
+                `${sessionArn}`,
+                `${sessionArn}/*`,
+              ],
+              Effect: "Allow",
+            },
+          ],
+        })
+      ),
   });
 
   await command.local.run({
@@ -81,7 +94,8 @@ export = async () => {
       environment: {
         variables: {
           BUCKET_NAME: s3Bucket.bucket,
-          TABLE_NAME: userTable.name,
+          USER_TABLE_NAME: userTable.name,
+          SESSION_TABLE_NAME: sessionTable.name,
         },
       },
     },
@@ -98,6 +112,9 @@ export = async () => {
   });
 
   return {
-    url: api.url,
+    API_BASE_URL: api.url,
+    BUCKET_NAME: s3Bucket.bucket,
+    USER_TABLE_NAME: userTable.name,
+    SESSION_TABLE_NAME: sessionTable.name,
   };
 };

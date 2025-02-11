@@ -18,12 +18,15 @@ s3_client = boto3.client("s3")
 dynamo_client = boto3.client("dynamodb")
 
 BUCKET_NAME = os.environ["BUCKET_NAME"]
-TABLE_NAME = os.environ["TABLE_NAME"]
+USER_TABLE_NAME = os.environ["USER_TABLE_NAME"]
+SESSION_TABLE_NAME = os.environ["SESSION_TABLE_NAME"]
 
 
 @app.get("/hello")
 def hello():
-    return {"message": "hello world"}
+    return {
+        "message": f"{BUCKET_NAME}\n{USER_TABLE_NAME}\n{SESSION_TABLE_NAME}"
+    }
 
 
 @app.get("/file")

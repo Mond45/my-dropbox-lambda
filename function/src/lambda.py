@@ -31,6 +31,8 @@ def register():
         )
     except ValidationError:
         raise HTTPErrors.BadRequestError("Invalid request body")
+    except user_table.meta.client.exceptions.ConditionalCheckFailedException:
+        raise HTTPErrors.BadRequestError("Username already exists")
 
 
 @app.post("/login")
@@ -45,7 +47,8 @@ def login():
         expireAt = int((datetime.now() + timedelta(days=7)).timestamp())
         token = generate_token()
         session_table.put_item(
-            Item={"Token": token, "Username": username, "ExpireAt": expireAt}
+            Item={"Token": token, "Username": username, "ExpireAt": expireAt},
+            ConditionExpression=Attr("Token").not_exists(),
         )
 
         return {"token": token}
@@ -81,20 +84,26 @@ def upload_file():
 
 @app.get("/file")
 def get_file():
-    token = get_session_token(app)
-    active_username = get_active_username(token)
+    try:
+        token = get_session_token(app)
+        active_username = get_active_username(token)
 
-    username = app.current_event.query_string_parameters.get("username", None)
-    file_name = app.current_event.query_string_parameters["file_name"]
+        username = app.current_event.query_string_parameters.get("username", None)
+        file_name = app.current_event.query_string_parameters["file_name"]
 
-    key = f"{username or active_username}/{file_name}"
-    if username is not None and username != active_username:
-        user = user_table.get_item(Key={"Username": active_username})
-        if key not in user["Item"]["SharedFiles"]:
-            raise HTTPErrors.ServiceError(403, "Access denied")
+        key = f"{username or active_username}/{file_name}"
+        if username is not None and username != active_username:
+            user = user_table.get_item(Key={"Username": active_username})
+            if key not in user["Item"]["SharedFiles"]:
+                raise HTTPErrors.NotFoundError()
 
-    res = s3_client.get_object(Bucket=BUCKET_NAME, Key=key)
-    return Response(200, body=res["Body"].read())
+        res = s3_client.get_object(Bucket=BUCKET_NAME, Key=key)
+        return Response(200, body=res["Body"].read())
+
+    except KeyError:
+        raise HTTPErrors.BadRequestError("Missing query parameter")
+    except s3_client.exceptions.NoSuchKey:
+        raise HTTPErrors.NotFoundError()
 
 
 @app.get("/files")
@@ -142,6 +151,9 @@ def share_file():
         body = parse(app.current_event.json_body, UserFileModel)
         file_name, target_username = body.file_name, body.username
 
+        if target_username == active_username:
+            raise HTTPErrors.BadRequestError("Already owner of the file")
+
         key = f"{active_username}/{file_name}"
         # ensure file existence
         s3_client.head_object(Bucket=BUCKET_NAME, Key=key)
@@ -150,12 +162,15 @@ def share_file():
             Key={"Username": target_username},
             UpdateExpression="SET SharedFiles = list_append(SharedFiles, :i)",
             ExpressionAttributeValues={":i": [key]},
-            ConditionExpression=Attr("Username").exists(),
+            ConditionExpression=Attr("Username").exists()
+            & (~Attr("SharedFiles").contains(key)),
         )
     except ValidationError:
         raise HTTPErrors.BadRequestError("Invalid request body")
-    except:
+    except s3_client.exceptions.NoSuchKey:
         raise HTTPErrors.NotFoundError()
+    except user_table.meta.client.exceptions.ConditionalCheckFailedException:
+        raise HTTPErrors.BadRequestError("User not found or file already shared")
 
 
 @logger.inject_lambda_context(correlation_id_path=correlation_paths.API_GATEWAY_REST)

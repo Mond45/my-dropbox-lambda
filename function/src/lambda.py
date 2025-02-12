@@ -1,5 +1,6 @@
 import base64
 from datetime import datetime, timedelta
+import re
 
 from aws_lambda_powertools import Logger
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver
@@ -23,6 +24,9 @@ def register():
     try:
         body = parse(app.current_event.json_body, UserModel)
         username, password = body.username, body.password
+
+        if re.fullmatch(r"[a-zA-Z0-9_\-]+", username) is None:
+            raise HTTPErrors.BadRequestError("Invalid username")
 
         hashed_password = password_hasher.hash(password)
         user_table.put_item(

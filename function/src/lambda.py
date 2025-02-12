@@ -44,10 +44,9 @@ def login():
         user = user_table.get_item(Key={"Username": username})
         password_hasher.verify(user["Item"]["Password"], password)
 
-        expireAt = int((datetime.now() + timedelta(days=7)).timestamp())
         token = generate_token()
         session_table.put_item(
-            Item={"Token": token, "Username": username, "ExpireAt": expireAt},
+            Item={"Token": token, "Username": username},
             ConditionExpression=Attr("Token").not_exists(),
         )
 

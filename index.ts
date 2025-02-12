@@ -17,7 +17,6 @@ export = async () => {
     attributes: [{ name: "Token", type: "S" }],
     hashKey: "Token",
     billingMode: "PAY_PER_REQUEST",
-    ttl: { attributeName: "ExpireAt", enabled: true },
   });
 
   const lambdaRole = new aws.iam.Role("my-dropbox-lambda-role", {

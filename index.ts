@@ -7,18 +7,6 @@ import * as command from "@pulumi/command";
 export = async () => {
   const s3Bucket = new aws.s3.BucketV2("my-dropbox-bucket");
 
-  const userTable = new aws.dynamodb.Table("my-dropbox-user-table", {
-    attributes: [{ name: "Username", type: "S" }],
-    hashKey: "Username",
-    billingMode: "PAY_PER_REQUEST",
-  });
-
-  const sessionTable = new aws.dynamodb.Table("my-dropbox-session-table", {
-    attributes: [{ name: "Token", type: "S" }],
-    hashKey: "Token",
-    billingMode: "PAY_PER_REQUEST",
-  });
-
   const lambdaRole = new aws.iam.Role("my-dropbox-lambda-role", {
     assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal(
       aws.iam.Principals.LambdaPrincipal
@@ -40,29 +28,6 @@ export = async () => {
         ],
       })
     ),
-  });
-
-  new aws.iam.RolePolicy("my-dropbox-lambda-dynamo-policy", {
-    role: lambdaRole,
-    policy: pulumi
-      .all([userTable.arn, sessionTable.arn])
-      .apply(([userArn, sessionArn]) =>
-        JSON.stringify({
-          Version: "2012-10-17",
-          Statement: [
-            {
-              Action: "dynamodb:*",
-              Resource: [
-                `${userArn}`,
-                `${userArn}/*`,
-                `${sessionArn}`,
-                `${sessionArn}/*`,
-              ],
-              Effect: "Allow",
-            },
-          ],
-        })
-      ),
   });
 
   await command.local.run({
@@ -94,8 +59,6 @@ export = async () => {
       environment: {
         variables: {
           BUCKET_NAME: s3Bucket.bucket,
-          USER_TABLE_NAME: userTable.name,
-          SESSION_TABLE_NAME: sessionTable.name,
         },
       },
     },
@@ -104,20 +67,14 @@ export = async () => {
 
   const api = new apigateway.RestAPI("my-dropbox-api", {
     routes: [
-      { path: "/register", method: "POST", eventHandler: fn },
-      { path: "/login", method: "POST", eventHandler: fn },
-      { path: "/logout", method: "POST", eventHandler: fn },
       { path: "/file", method: "PUT", eventHandler: fn },
       { path: "/file", method: "GET", eventHandler: fn },
       { path: "/files", method: "GET", eventHandler: fn },
-      { path: "/share", method: "POST", eventHandler: fn },
     ],
   });
 
   return {
     API_BASE_URL: api.url,
     BUCKET_NAME: s3Bucket.bucket,
-    USER_TABLE_NAME: userTable.name,
-    SESSION_TABLE_NAME: sessionTable.name,
   };
 };

@@ -10,6 +10,7 @@
         "@pulumi/awsx": "^2.0.2",
         "@pulumi/command": "0.0.1-testwindows.signing",
         "@pulumi/docker-build": "^0.0.10",
-        "@pulumi/pulumi": "^3.113.0"
+        "@pulumi/pulumi": "^3.113.0",
+        "dotenv": "^16.4.7"
     }
 }

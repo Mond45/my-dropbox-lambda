@@ -3,6 +3,7 @@ import * as aws from "@pulumi/aws";
 import * as apigateway from "@pulumi/aws-apigateway";
 import * as dockerBuild from "@pulumi/docker-build";
 import * as command from "@pulumi/command";
+import "dotenv/config";
 
 export = async () => {
   const s3Bucket = new aws.s3.BucketV2("my-dropbox-bucket");
@@ -59,6 +60,7 @@ export = async () => {
       environment: {
         variables: {
           BUCKET_NAME: s3Bucket.bucket,
+          API_KEY: process.env.API_KEY!,
         },
       },
     },

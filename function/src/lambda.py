@@ -19,15 +19,23 @@ class FileUploadModel(BaseModel):
 
 
 BUCKET_NAME = os.environ["BUCKET_NAME"]
+API_KEY = os.environ["API_KEY"]
 
 s3_client = boto3.client("s3")
 app = APIGatewayRestResolver()
 logger = Logger()
 
 
+def validate_api_key():
+    if app.current_event.headers.get("x-api-key") != API_KEY:
+        raise HTTPErrors.UnauthorizedError("Invalid API key")
+
+
 @app.put("/file")
 def upload_file():
     try:
+        validate_api_key()
+
         body = parse(app.current_event.json_body, FileUploadModel)
         # file content is passed as Base64 encoded string
         file_name, content = body.file_name, body.content
@@ -44,6 +52,8 @@ def upload_file():
 @app.get("/file")
 def get_file():
     try:
+        validate_api_key()
+
         file_name = app.current_event.query_string_parameters["file_name"]
 
         res = s3_client.get_object(Bucket=BUCKET_NAME, Key=file_name)
@@ -56,6 +66,8 @@ def get_file():
 
 @app.get("/files")
 def list_files():
+    validate_api_key()
+    
     # use paginator as list_objects_v2 only returns up to 1000 objects per requests
     paginator = s3_client.get_paginator("list_objects_v2")
     result = []

@@ -12,6 +12,7 @@ from aws_lambda_powertools.utilities.typing import LambdaContext
 from pydantic import BaseModel
 
 
+# Pydantic model for file upload request validation
 class FileUploadModel(BaseModel):
     file_name: str
     content: str
@@ -28,6 +29,7 @@ logger = Logger()
 def upload_file():
     try:
         body = parse(app.current_event.json_body, FileUploadModel)
+        # file content is passed as Base64 encoded string
         file_name, content = body.file_name, body.content
 
         s3_client.put_object(
@@ -54,6 +56,7 @@ def get_file():
 
 @app.get("/files")
 def list_files():
+    # use paginator as list_objects_v2 only returns up to 1000 objects per requests
     paginator = s3_client.get_paginator("list_objects_v2")
     result = []
     for page in paginator.paginate(Bucket=BUCKET_NAME):

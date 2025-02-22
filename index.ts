@@ -21,7 +21,7 @@ export = async () => {
 
   const lambdaRole = new aws.iam.Role("my-dropbox-lambda-role", {
     assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal(
-      aws.iam.Principals.LambdaPrincipal
+      aws.iam.Principals.LambdaPrincipal,
     ),
     managedPolicyArns: [aws.iam.ManagedPolicy.AWSLambdaBasicExecutionRole],
   });
@@ -38,7 +38,7 @@ export = async () => {
             Effect: "Allow",
           },
         ],
-      })
+      }),
     ),
   });
 
@@ -61,8 +61,12 @@ export = async () => {
               Effect: "Allow",
             },
           ],
-        })
+        }),
       ),
+  });
+
+  await command.local.run({
+    command: "rm -rf dist",
   });
 
   await command.local.run({
@@ -99,7 +103,7 @@ export = async () => {
         },
       },
     },
-    { dependsOn: [buildLambda] }
+    { dependsOn: [buildLambda] },
   );
 
   const api = new apigateway.RestAPI("my-dropbox-api", {

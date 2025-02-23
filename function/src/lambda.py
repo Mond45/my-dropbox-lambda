@@ -13,7 +13,7 @@ from aws_lambda_powertools.event_handler.api_gateway import Response
 from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools.utilities.parser import ValidationError, parse
 from aws_lambda_powertools.utilities.typing import LambdaContext
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel
 
 s3_client = boto3.client("s3")
@@ -22,9 +22,11 @@ dynamodb = boto3.resource("dynamodb")
 BUCKET_NAME = os.environ["BUCKET_NAME"]
 USER_TABLE_NAME = os.environ["USER_TABLE_NAME"]
 SESSION_TABLE_NAME = os.environ["SESSION_TABLE_NAME"]
+SHARE_TABLE_NAME = os.environ["SHARE_TABLE_NAME"]
 
 user_table = dynamodb.Table(USER_TABLE_NAME)
 session_table = dynamodb.Table(SESSION_TABLE_NAME)
+share_table = dynamodb.Table(SHARE_TABLE_NAME)
 
 password_hasher = argon2.PasswordHasher(memory_cost=12288, time_cost=3, parallelism=1)
 
@@ -79,7 +81,7 @@ def register():
 
     try:
         user_table.put_item(
-            Item={"Username": username, "Password": hashed_password, "SharedFiles": []},
+            Item={"Username": username, "Password": hashed_password},
             ConditionExpression=Attr("Username").not_exists(),
         )
     except user_table.meta.client.exceptions.ConditionalCheckFailedException:
@@ -147,8 +149,10 @@ def get_file():
     try:
         key = f"{username or active_username}/{file_name}"
         if username is not None and username != active_username:
-            user = user_table.get_item(Key={"Username": active_username})
-            if key not in user["Item"]["SharedFiles"]:
+            if (
+                share_table.get_item(Key={"User": active_username, "File": key}).get("Item")
+                is None
+            ):
                 raise HTTPErrors.NotFoundError()
 
         res = s3_client.get_object(Bucket=BUCKET_NAME, Key=key)
@@ -178,8 +182,10 @@ def list_files():
         )
 
     # Get all files shared with the active user
-    user = user_table.get_item(Key={"Username": active_username})
-    shared_files: list[str] = user["Item"]["SharedFiles"]
+
+    response = share_table.query(KeyConditionExpression=Key("User").eq(active_username))
+    shared_files = [e["File"] for e in response["Items"]]
+
     for file in shared_files:
         head = s3_client.head_object(Bucket=BUCKET_NAME, Key=file)
         result.append(
@@ -214,16 +220,11 @@ def share_file():
     except botocore.exceptions.ClientError:
         raise HTTPErrors.NotFoundError()
 
-    try:
-        user_table.update_item(
-            Key={"Username": target_username},
-            UpdateExpression="SET SharedFiles = list_append(SharedFiles, :i)",
-            ExpressionAttributeValues={":i": [key]},
-            ConditionExpression=Attr("Username").exists()
-            & (~Attr("SharedFiles").contains(key)),
-        )
-    except user_table.meta.client.exceptions.ConditionalCheckFailedException:
-        raise HTTPErrors.BadRequestError("Failed to share file")
+    # check target user existence
+    if user_table.get_item(Key={"Username": target_username}).get("Item") is None:
+        raise HTTPErrors.BadRequestError("Target user not found")
+
+    share_table.put_item(Item={"User": target_username, "File": key})
 
 
 @logger.inject_lambda_context(correlation_id_path=correlation_paths.API_GATEWAY_REST)

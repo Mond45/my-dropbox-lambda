@@ -19,6 +19,16 @@ export = async () => {
     billingMode: "PAY_PER_REQUEST",
   });
 
+  const shareTable = new aws.dynamodb.Table("my-dropbox-share-table", {
+    attributes: [
+      { name: "User", type: "S" },
+      { name: "File", type: "S" },
+    ],
+    hashKey: "User",
+    rangeKey: "File",
+    billingMode: "PAY_PER_REQUEST",
+  });
+
   const lambdaRole = new aws.iam.Role("my-dropbox-lambda-role", {
     assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal(
       aws.iam.Principals.LambdaPrincipal,
@@ -45,8 +55,8 @@ export = async () => {
   new aws.iam.RolePolicy("my-dropbox-lambda-dynamo-policy", {
     role: lambdaRole,
     policy: pulumi
-      .all([userTable.arn, sessionTable.arn])
-      .apply(([userArn, sessionArn]) =>
+      .all([userTable.arn, sessionTable.arn, shareTable.arn])
+      .apply(([userArn, sessionArn, shareArn]) =>
         JSON.stringify({
           Version: "2012-10-17",
           Statement: [
@@ -57,6 +67,8 @@ export = async () => {
                 `${userArn}/*`,
                 `${sessionArn}`,
                 `${sessionArn}/*`,
+                `${shareArn}`,
+                `${shareArn}/*`,
               ],
               Effect: "Allow",
             },
@@ -100,6 +112,7 @@ export = async () => {
           BUCKET_NAME: s3Bucket.bucket,
           USER_TABLE_NAME: userTable.name,
           SESSION_TABLE_NAME: sessionTable.name,
+          SHARE_TABLE_NAME: shareTable.name,
         },
       },
     },
@@ -123,5 +136,6 @@ export = async () => {
     BUCKET_NAME: s3Bucket.bucket,
     USER_TABLE_NAME: userTable.name,
     SESSION_TABLE_NAME: sessionTable.name,
+    SHARE_TABLE_NAME: shareTable.name,
   };
 };

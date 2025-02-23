@@ -4,6 +4,8 @@ import secrets
 
 import argon2
 import boto3
+import botocore
+import botocore.exceptions
 from aws_lambda_powertools import Logger
 from aws_lambda_powertools.event_handler import APIGatewayRestResolver
 from aws_lambda_powertools.event_handler import exceptions as HTTPErrors
@@ -209,7 +211,7 @@ def share_file():
         key = f"{active_username}/{file_name}"
         # ensure file existence
         s3_client.head_object(Bucket=BUCKET_NAME, Key=key)
-    except s3_client.exceptions.NoSuchKey:
+    except botocore.exceptions.ClientError:
         raise HTTPErrors.NotFoundError()
 
     try:
